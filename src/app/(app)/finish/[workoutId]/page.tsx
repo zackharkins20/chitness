@@ -33,7 +33,7 @@ export default async function FinishPage({ params }: { params: Promise<{ workout
         <StatTile icon={<Clock className="size-5" />} label="Duration" value={`${minutes}m`} />
         <StatTile icon={<Dumbbell className="size-5" />} label="Sets" value={String(stats.setsCompleted)} />
         <StatTile icon={<Flame className="size-5" />} label="Streak" value={`${stats.streak}d`} />
-        <StatTile icon={<Dumbbell className="size-5" />} label="Volume" value={volume} suffix="lb" />
+        <StatTile icon={<Dumbbell className="size-5" />} label="Volume" value={volume} suffix="kg" />
       </div>
 
       {stats.prs.length > 0 && (

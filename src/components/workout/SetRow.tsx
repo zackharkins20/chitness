@@ -53,7 +53,7 @@ export function SetRow({ setIndex, programExercise, current, previous, onChange,
       ) : (
         <NumberCell
           value={current?.load ?? null}
-          placeholder={previous?.load?.toString() ?? "lb"}
+          placeholder={previous?.load?.toString() ?? "kg"}
           onChange={(v) => onChange({ load: v })}
           step={2.5}
           disabled={completed}
