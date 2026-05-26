@@ -5,6 +5,10 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { ExerciseCard } from "./ExerciseCard";
 import { SwipeToFinish } from "./SwipeToFinish";
+import { WorkoutDuration } from "./WorkoutDuration";
+import { DayPicker } from "./DayPicker";
+import { SessionMenu } from "./SessionMenu";
+import { ExerciseSheet } from "./ExerciseSheet";
 import type { SetLog } from "@/lib/types";
 import type { TodayData } from "@/lib/data/today";
 
@@ -31,6 +35,7 @@ export function WorkoutSession({ data }: { data: TodayData }) {
 
   const [sets, setSets] = useState<Record<string, Partial<SetLog>>>(initialSets);
   const [activeRest, setActiveRest] = useState<ActiveRest | null>(null);
+  const [openSheetForExerciseId, setOpenSheetForExerciseId] = useState<string | null>(null);
 
   /** Group exercises by superset_group, preserving order. */
   const groups = useMemo(() => {
@@ -53,8 +58,6 @@ export function WorkoutSession({ data }: { data: TodayData }) {
       const next = { ...current, ...patch };
       setSets((s) => ({ ...s, [key]: next }));
 
-      // Persist (upsert): keep the row in sync, but only after the user has typed something
-      // or completed the set. Empty rows with no completed_at can stay un-persisted.
       const hasContent =
         next.load != null || next.reps != null || next.time_sec != null ||
         next.rpe != null || next.intensity != null || next.completed_at != null;
@@ -86,11 +89,9 @@ export function WorkoutSession({ data }: { data: TodayData }) {
       const wasCompleted = !!current.completed_at;
 
       if (wasCompleted) {
-        // Uncomplete
         await onSetChange(programExerciseId, setIndex, { completed_at: null });
         setActiveRest((r) => (r?.programExerciseId === programExerciseId ? null : r));
       } else {
-        // Complete: pull values from previous if the user didn't type anything
         const prevForExercise = data.previousByExercise[programExerciseId] ?? [];
         const prev = prevForExercise[setIndex - 1];
         const patch: Partial<SetLog> = {
@@ -111,6 +112,32 @@ export function WorkoutSession({ data }: { data: TodayData }) {
     [sets, onSetChange, data.previousByExercise],
   );
 
+  const onResetExerciseSets = useCallback(
+    async (programExerciseId: string) => {
+      await supabase
+        .from("set_logs")
+        .delete()
+        .eq("workout_id", data.workoutId)
+        .eq("program_exercise_id", programExerciseId);
+      // Clear local state for that exercise
+      setSets((s) => {
+        const next = { ...s };
+        for (const k of Object.keys(next)) {
+          if (k.startsWith(programExerciseId + ":")) delete next[k];
+        }
+        return next;
+      });
+      if (activeRest?.programExerciseId === programExerciseId) setActiveRest(null);
+    },
+    [supabase, data.workoutId, activeRest],
+  );
+
+  const onDiscardWorkout = useCallback(async () => {
+    await supabase.from("workouts").delete().eq("id", data.workoutId);
+    router.refresh();
+    router.push("/today");
+  }, [supabase, data.workoutId, router]);
+
   const onFinishWorkout = useCallback(async () => {
     await supabase
       .from("workouts")
@@ -119,16 +146,34 @@ export function WorkoutSession({ data }: { data: TodayData }) {
     router.push(`/finish/${data.workoutId}`);
   }, [supabase, data.workoutId, router]);
 
+  const activeDayOrder = data.day.day_order;
+  const hasLoggedSets = Object.values(sets).some(
+    (s) => s.load != null || s.reps != null || s.time_sec != null || s.completed_at != null,
+  );
+
+  const openExercise = openSheetForExerciseId
+    ? data.day.exercises.find((ex) => ex.id === openSheetForExerciseId) ?? null
+    : null;
+
   return (
     <main className="flex-1 flex flex-col gap-3 px-3 pt-safe pb-4 max-w-md w-full mx-auto">
-      <header className="flex items-center justify-between px-2 pt-3 pb-1">
-        <div>
-          <h1 className="text-lg font-bold tracking-tight">{data.day.name}</h1>
-          <p className="text-xs text-fg-muted">
-            Started {new Date(data.startedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
-          </p>
+      <header className="flex items-center justify-between px-1 pt-3 pb-1 gap-2">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-lg font-bold tracking-tight truncate">{data.day.name}</h1>
+          <div className="flex items-center gap-2 text-xs text-fg-muted mt-0.5">
+            <WorkoutDuration startedAt={data.startedAt} />
+            <span aria-hidden>·</span>
+            <span>{data.setLogs.filter((s) => s.completed_at).length} sets done</span>
+          </div>
         </div>
+        <SessionMenu onDiscard={onDiscardWorkout} />
       </header>
+
+      <DayPicker
+        days={data.allDays}
+        activeDayOrder={activeDayOrder}
+        hasLoggedSets={hasLoggedSets}
+      />
 
       <div className="flex flex-col gap-3">
         {groups.map((group, gi) => (
@@ -161,7 +206,7 @@ export function WorkoutSession({ data }: { data: TodayData }) {
                   onSetChange={(setIndex, patch) => onSetChange(ex.id, setIndex, patch)}
                   onToggleComplete={(setIndex, restSec) => onToggleComplete(ex.id, setIndex, restSec)}
                   onDismissRest={() => setActiveRest(null)}
-                  onOpenMenu={() => {/* TODO: notes / swap exercise */}}
+                  onOpenMenu={() => setOpenSheetForExerciseId(ex.id)}
                 />
               );
             })}
@@ -172,6 +217,15 @@ export function WorkoutSession({ data }: { data: TodayData }) {
       <div className="mt-2">
         <SwipeToFinish onFinish={onFinishWorkout} />
       </div>
+
+      {openExercise && (
+        <ExerciseSheet
+          open={!!openExercise}
+          programExercise={openExercise}
+          onClose={() => setOpenSheetForExerciseId(null)}
+          onResetSets={() => onResetExerciseSets(openExercise.id)}
+        />
+      )}
     </main>
   );
 }

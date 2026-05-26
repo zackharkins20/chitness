@@ -3,8 +3,14 @@ import { WorkoutSession } from "@/components/workout/WorkoutSession";
 
 export const dynamic = "force-dynamic";
 
-export default async function TodayPage() {
-  const data = await getTodayData();
+export default async function TodayPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ day?: string }>;
+}) {
+  const { day } = await searchParams;
+  const dayOrder = day ? Number(day) : undefined;
+  const data = await getTodayData(Number.isFinite(dayOrder) ? dayOrder : undefined);
 
   if (!data) {
     return (

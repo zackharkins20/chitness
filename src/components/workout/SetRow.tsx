@@ -48,7 +48,6 @@ export function SetRow({ setIndex, programExercise, current, previous, onChange,
           value={current?.time_sec ?? null}
           placeholder={`${programExercise.target_time_sec ?? ""}s`}
           onChange={(v) => onChange({ time_sec: v })}
-          disabled={completed}
         />
       ) : (
         <NumberCell
@@ -56,7 +55,6 @@ export function SetRow({ setIndex, programExercise, current, previous, onChange,
           placeholder={previous?.load?.toString() ?? "kg"}
           onChange={(v) => onChange({ load: v })}
           step={2.5}
-          disabled={completed}
         />
       )}
 
@@ -65,7 +63,6 @@ export function SetRow({ setIndex, programExercise, current, previous, onChange,
           value={current?.reps ?? null}
           placeholder={previous?.reps?.toString() ?? targetReps}
           onChange={(v) => onChange({ reps: v != null ? Math.round(v) : null })}
-          disabled={completed}
         />
       )}
 
@@ -74,7 +71,6 @@ export function SetRow({ setIndex, programExercise, current, previous, onChange,
           value={current?.intensity ?? ""}
           placeholder="—"
           onChange={(v) => onChange({ intensity: v || null })}
-          disabled={completed}
         />
       )}
 
@@ -99,13 +95,11 @@ function NumberCell({
   value,
   placeholder,
   onChange,
-  disabled,
   step = 1,
 }: {
   value: number | null;
   placeholder: string;
   onChange: (v: number | null) => void;
-  disabled?: boolean;
   step?: number;
 }) {
   return (
@@ -115,7 +109,7 @@ function NumberCell({
       step={step}
       placeholder={placeholder}
       value={value ?? ""}
-      disabled={disabled}
+      data-chitness-num
       onChange={(e) => {
         const raw = e.target.value;
         onChange(raw === "" ? null : Number(raw));
@@ -124,7 +118,6 @@ function NumberCell({
         "w-full text-center h-9 rounded-md bg-bg-elevated border border-transparent text-fg text-base font-semibold",
         "placeholder:text-fg-dim placeholder:font-normal",
         "focus:outline-none focus:border-accent focus:bg-bg-card",
-        "disabled:opacity-100 disabled:bg-transparent disabled:text-fg",
       )}
     />
   );
@@ -134,25 +127,22 @@ function TextCell({
   value,
   placeholder,
   onChange,
-  disabled,
 }: {
   value: string;
   placeholder: string;
   onChange: (v: string) => void;
-  disabled?: boolean;
 }) {
   return (
     <input
       type="text"
       placeholder={placeholder}
       value={value}
-      disabled={disabled}
+      data-chitness-num
       onChange={(e) => onChange(e.target.value)}
       className={cn(
         "w-full text-center h-9 rounded-md bg-bg-elevated border border-transparent text-fg text-sm font-medium",
         "placeholder:text-fg-dim",
         "focus:outline-none focus:border-accent focus:bg-bg-card",
-        "disabled:opacity-100 disabled:bg-transparent",
       )}
     />
   );

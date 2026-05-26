@@ -9,15 +9,20 @@ export type TodayData = {
   startedAt: string;
   setLogs: SetLog[];             // sets already logged in the active workout
   previousByExercise: Record<string, SetLog[]>;  // last completed sets per program_exercise_id
+  allDays: { id: string; day_order: number; name: string }[];  // for day picker
 };
 
 /**
  * Pick which day she's doing today:
- *   1. If a workout was started today but not finished → resume it
- *   2. Otherwise, advance from the last finished workout's day_order
- *   3. If she has never trained → Day 1
+ *   1. If `overrideDayOrder` is given → use that day (creating a new workout if needed)
+ *   2. Else if a workout was started but not finished → resume it
+ *   3. Otherwise, advance from the last finished workout's day_order
+ *   4. If she has never trained → Day 1
+ *
+ * When overrideDayOrder forces a switch away from an in-progress workout for a
+ * different day, the existing in-progress workout is discarded (cascade-deleted).
  */
-export async function getTodayData(): Promise<TodayData | null> {
+export async function getTodayData(overrideDayOrder?: number): Promise<TodayData | null> {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
@@ -42,7 +47,7 @@ export async function getTodayData(): Promise<TodayData | null> {
 
   if (!days || days.length === 0) return null;
 
-  // 1. Look for an in-progress workout
+  // Look for an in-progress workout
   const { data: inProgress } = await supabase
     .from("workouts")
     .select("*")
@@ -56,12 +61,15 @@ export async function getTodayData(): Promise<TodayData | null> {
   let workoutId: string;
   let startedAt: string;
 
-  if (inProgress) {
-    chosenDayId = inProgress.program_day_id;
-    workoutId = inProgress.id;
-    startedAt = inProgress.started_at;
+  // Resolve the day she should be on
+  let targetDay: typeof days[number] | undefined;
+  if (overrideDayOrder != null) {
+    targetDay = days.find((d) => d.day_order === overrideDayOrder);
+    if (!targetDay) return null;
+  } else if (inProgress) {
+    targetDay = days.find((d) => d.id === inProgress.program_day_id);
   } else {
-    // 2. Advance from the most recent finished workout
+    // Advance from the most recent finished workout
     const { data: lastFinished } = await supabase
       .from("workouts")
       .select("program_day_id, finished_at, program_days!inner(day_order)")
@@ -70,16 +78,25 @@ export async function getTodayData(): Promise<TodayData | null> {
       .order("finished_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-
     let nextOrder = 1;
     if (lastFinished) {
       const lastOrder = (lastFinished.program_days as unknown as { day_order: number }).day_order;
       nextOrder = (lastOrder % days.length) + 1;
     }
-    const chosen = days.find((d) => d.day_order === nextOrder)!;
-    chosenDayId = chosen.id;
+    targetDay = days.find((d) => d.day_order === nextOrder);
+  }
+  if (!targetDay) return null;
+  chosenDayId = targetDay.id;
 
-    // Create new workout
+  if (inProgress && inProgress.program_day_id === chosenDayId) {
+    // Resume the in-progress workout
+    workoutId = inProgress.id;
+    startedAt = inProgress.started_at;
+  } else {
+    // If switching days, discard any in-progress workout for a different day
+    if (inProgress && inProgress.program_day_id !== chosenDayId) {
+      await supabase.from("workouts").delete().eq("id", inProgress.id);
+    }
     const { data: created } = await supabase
       .from("workouts")
       .insert({ user_id: user.id, program_day_id: chosenDayId })
@@ -150,5 +167,6 @@ export async function getTodayData(): Promise<TodayData | null> {
     startedAt,
     setLogs: setLogs ?? [],
     previousByExercise,
+    allDays: days.map((d) => ({ id: d.id, day_order: d.day_order, name: d.name })),
   };
 }
